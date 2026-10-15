@@ -1,0 +1,16 @@
+# Môi trường ảo
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Biến môi trường / khóa bí mật
+.env
+
+# Hệ điều hành / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
