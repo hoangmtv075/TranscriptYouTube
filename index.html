@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Transcript</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1c2330; --muted: #5d6675;
+    --line: #d9dde4; --accent: #1f5eff; --code-bg: #0f1724; --code-text: #d6e2ff;
+    --err: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161d; --card: #1a2029; --text: #e8ecf2; --muted: #9aa5b5;
+      --line: #2c3542; --accent: #6b93ff; --code-bg: #0b0f16; --err: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; padding: 32px 16px; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; color: var(--muted); }
+  form {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; display: grid; gap: 16px;
+  }
+  label { display: grid; gap: 6px; font-weight: 600; font-size: .95rem; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  }
+  input:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 20px; }
+  .checks label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+  .hint { font-weight: 400; color: var(--muted); font-size: .85rem; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; border: 0; border-radius: 8px;
+    padding: 11px 18px; background: var(--accent); color: #fff;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); padding: 6px 12px; font-size: .85rem; }
+  .result { margin-top: 24px; }
+  .bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  #status { color: var(--muted); font-size: .9rem; }
+  #status.error { color: var(--err); }
+  pre {
+    margin: 0; padding: 16px; background: var(--code-bg); color: var(--code-text);
+    border-radius: 10px; max-height: 60vh; overflow: auto;
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>YouTube Transcript</h1>
+  <p class="sub">Paste a video link, choose your options and get the result as JSON.</p>
+
+  <form id="form">
+    <label>YouTube link
+      <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." required>
+    </label>
+
+    <div class="checks">
+      <label><input type="checkbox" id="timestamp" checked> Include timestamps</label>
+      <label><input type="checkbox" id="merge" checked> Merge into complete sentences</label>
+      <label><input type="checkbox" id="useLang"> Set preferred language</label>
+    </div>
+
+    <label id="langField" hidden>Preferred language
+      <input type="text" id="languages" placeholder="en">
+      <span class="hint">Enter one language code. Leave empty to get the video's original language.</span>
+      <span class="hint">Examples: en, vi, ja, ko, fr, es, de, pt, ru, zh-Hans, zh-Hant. If the video doesn't have it, its original language is returned.</span>
+    </label>
+
+    <button type="submit" id="submit">Get transcript</button>
+  </form>
+
+  <section class="result" id="result" hidden>
+    <div class="bar">
+      <span id="status"></span>
+      <button type="button" class="ghost" id="copy">Copy JSON</button>
+    </div>
+    <pre id="output"></pre>
+  </section>
+</main>
+
+<script>
+  // Opened via file:// -> call the local server directly; opened via the server -> same origin.
+  const BASE = location.protocol === "file:" ? "http://localhost:8000" : "";
+  const $ = (id) => document.getElementById(id);
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const langs = $("useLang").checked
+      ? $("languages").value.split(",").map(s => s.trim()).filter(Boolean)
+      : [];
+    const body = {
+      url: $("url").value.trim(),
+      timestamp: $("timestamp").checked,
+      mergeSentences: $("merge").checked,
+    };
+    if (langs.length) body.languages = langs;
+
+    $("submit").disabled = true;
+    $("submit").textContent = "Getting transcript...";
+    $("result").hidden = false;
+    $("status").className = "";
+    $("status").textContent = "Processing...";
+    $("output").textContent = "";
+
+    try {
+      const res = await fetch(BASE + "/api/transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      $("output").textContent = JSON.stringify(data, null, 2);
+      if (res.ok) {
+        $("status").textContent = `Success (${res.status}) · ${data.transcript.length} lines`;
+      } else {
+        $("status").className = "error";
+        $("status").textContent = `Error ${res.status}`;
+      }
+    } catch (err) {
+      $("status").className = "error";
+      $("status").textContent = "Could not reach the server. Check that uvicorn is running.";
+    } finally {
+      $("submit").disabled = false;
+      $("submit").textContent = "Get transcript";
+    }
+  });
+
+  $("useLang").addEventListener("change", (e) => {
+    $("langField").hidden = !e.target.checked;
+    $("languages").value = "";
+    if (e.target.checked) $("languages").focus();
+  });
+
+  $("copy").addEventListener("click", async () => {
+    await navigator.clipboard.writeText($("output").textContent);
+    $("copy").textContent = "Copied";
+    setTimeout(() => ($("copy").textContent = "Copy JSON"), 1500);
+  });
+</script>
+</body>
+</html>
